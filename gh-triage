@@ -127,6 +127,7 @@ def main() -> None:
         prog="gh triage",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
+    parser.suggest_on_error = True
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # Common arguments for all subcommands
