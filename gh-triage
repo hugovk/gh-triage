@@ -1,0 +1,159 @@
+#!/usr/bin/env python3
+"""gh-triage: Tools for triaging GitHub issues and PRs."""
+
+import argparse
+import json
+import shlex
+import subprocess
+
+
+def run(cmd: str, dry_run: bool = False) -> tuple[int, str, str]:
+    """Run a command and return (returncode, stdout, stderr)."""
+    if dry_run:
+        print(f"  {cmd}")
+        return 0, "", ""
+    result = subprocess.run(shlex.split(cmd), capture_output=True, text=True)
+    return result.returncode, result.stdout, result.stderr
+
+
+def cmd_spam(args) -> None:
+    """Close an issue or PR as spam."""
+    target = args.target
+    dry_run = args.dry_run
+
+    # Determine if it's a PR or issue
+    return_code, _, _ = run(f"gh pr view {target}")
+    is_pr = return_code == 0
+
+    # Get repo labels
+    _, labels_json, _ = run("gh label list --json name --limit 500")
+    repo_labels = json.loads(labels_json) if labels_json else []
+
+    # Find invalid and spam labels (case insensitive)
+    invalid_label = None
+    spam_label = None
+    for label in repo_labels:
+        name = label["name"]
+        if name.lower() == "invalid":
+            invalid_label = name
+        elif name.lower() == "spam":
+            spam_label = name
+
+    labels_to_add = [l for l in [invalid_label, spam_label] if l]
+
+    kind = "PR" if is_pr else "issue"
+    gh_cmd = "pr" if is_pr else "issue"
+
+    if dry_run:
+        print(f"Would run on {kind} {target}:")
+
+    if labels_to_add:
+        run(f"gh {gh_cmd} edit {target} --add-label {','.join(labels_to_add)}", dry_run)
+
+    run(f"gh {gh_cmd} edit {target} --title spam", dry_run)
+
+    reason = "" if is_pr else "--reason 'spam'"
+    run(f"gh {gh_cmd} close {target} {reason}", dry_run)
+
+    if not dry_run:
+        print("Closed as spam")
+
+
+def cmd_unassign(args) -> None:
+    """Unassign all users and reviewers from an issue or PR."""
+    target = args.target
+    dry_run = args.dry_run
+
+    # Determine if it's a PR or issue and get assignees/reviewers
+    return_code, pr_json, _ = run(
+        f"gh pr view {target} --json assignees,reviewRequests"
+    )
+    if return_code == 0:
+        is_pr = True
+        data = json.loads(pr_json)
+    else:
+        is_pr = False
+        _, issue_json, _ = run(f"gh issue view {target} --json assignees")
+        data = json.loads(issue_json) if issue_json else {}
+
+    assignees = [a["login"] for a in data.get("assignees", [])]
+
+    # Get review requests (PRs only) - can be users or teams
+    reviewers = []
+    for r in data.get("reviewRequests", []):
+        if r.get("__typename") == "Team":
+            reviewers.append(r["slug"])
+        else:
+            reviewers.append(r["login"])
+
+    kind = "PR" if is_pr else "issue"
+    gh_cmd = "pr" if is_pr else "issue"
+
+    if not assignees and not reviewers:
+        print(f"No assignees or reviewers on {kind} {target}")
+        return
+
+    if dry_run:
+        print(f"Would run on {kind} {target}:")
+
+    if assignees:
+        assignee_list = ",".join(assignees)
+        rc, _, err = run(
+            f"gh {gh_cmd} edit {target} --remove-assignee {assignee_list}", dry_run
+        )
+        if not dry_run:
+            if rc == 0:
+                for a in assignees:
+                    print(f"Unassigned {a}")
+            else:
+                print(f"Error removing assignees: {err}")
+
+    if reviewers:
+        reviewer_list = ",".join(reviewers)
+        rc, _, err = run(
+            f"gh pr edit {target} --remove-reviewer {reviewer_list}", dry_run
+        )
+        if not dry_run:
+            if rc == 0:
+                for r in reviewers:
+                    print(f"Removed reviewer {r}")
+            else:
+                print(f"Error removing reviewers: {err}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        prog="gh triage",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # Common arguments for all subcommands
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument("target", help="Issue or PR number or URL")
+    common.add_argument(
+        "-n",
+        "--dry-run",
+        action="store_true",
+        help="Show what would be done without making changes",
+    )
+
+    # gh triage spam
+    p_spam = subparsers.add_parser(
+        "spam", parents=[common], help="Close issue/PR as spam"
+    )
+    p_spam.set_defaults(func=cmd_spam)
+
+    # gh triage unassign
+    p_unassign = subparsers.add_parser(
+        "unassign", parents=[common], help="Unassign all users and reviewers"
+    )
+    p_unassign.set_defaults(func=cmd_unassign)
+
+    args = parser.parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,17 +1,21 @@
-# gh-spam
+# gh-triage
 
-A GitHub CLI extension to quickly close issues and PRs as spam.
+A GitHub CLI extension with tools for triaging issues and PRs.
 
 ## Installation
 
 ```sh
-gh extension install hugovk/gh-spam
+gh extension install hugovk/gh-triage
 ```
 
-## Usage
+## Commands
+
+### spam
+
+Close an issue or PR as spam.
 
 ```sh
-gh spam <issue-or-pr-number-or-url>
+gh triage spam <issue-or-pr-number-or-url>
 ```
 
 This will:
@@ -20,7 +24,21 @@ This will:
 - Change the title to "spam"
 - Close the issue as "not planned", or close the PR
 
-### Options
+### unassign
+
+Unassign all users and reviewers from an issue or PR.
+
+```sh
+gh triage unassign <issue-or-pr-number-or-url>
+```
+
+This will:
+- Remove all assignees
+- Remove all requested reviewers (PRs only)
+
+## Options
+
+All commands support:
 
 - `-n, --dry-run`: Show what would be done without making changes
 
@@ -28,11 +46,14 @@ This will:
 
 ```sh
 # Close issue #123 as spam
-gh spam 123
+gh triage spam 123
 
-# Close a PR by URL
-gh spam https://github.com/owner/repo/pull/456
+# Dry run
+gh triage spam -n 123
 
-# Dry run to see what would happen
-gh spam -n 123
+# Unassign all from PR #456
+gh triage unassign 456
+
+# Unassign with URL
+gh triage unassign https://github.com/owner/repo/pull/456
 ```
