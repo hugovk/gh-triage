@@ -19,8 +19,9 @@ gh triage spam <issue-or-pr-number-or-url>
 ```
 
 This will:
-- Apply the "invalid" label if it exists in the repo (case insensitive)
-- Apply the "spam" label if it exists in the repo (case insensitive)
+
+- Remove all labels except "invalid" and "spam"
+- Apply the "invalid" and "spam" labels if they exist in the repo
 - Change the title to "spam"
 - Close the issue as "not planned", or close the PR
 
@@ -33,6 +34,7 @@ gh triage unassign <issue-or-pr-number-or-url>
 ```
 
 This will:
+
 - Remove all assignees
 - Remove all requested reviewers (PRs only)
 

@@ -7,12 +7,18 @@ import shlex
 import subprocess
 
 
-def run(cmd: str, dry_run: bool = False) -> tuple[int, str, str]:
+def run(
+    cmd: str, dry_run: bool = False, success_message: str | None = None
+) -> tuple[int, str, str]:
     """Run a command and return (returncode, stdout, stderr)."""
     if dry_run:
         print(f"  {cmd}")
         return 0, "", ""
+
     result = subprocess.run(shlex.split(cmd), capture_output=True, text=True)
+    if result.returncode == 0 and success_message:
+        print("✅ " + success_message)
+
     return result.returncode, result.stdout, result.stderr
 
 
@@ -25,38 +31,46 @@ def cmd_spam(args) -> None:
     return_code, _, _ = run(f"gh pr view {target}")
     is_pr = return_code == 0
 
-    # Get repo labels
-    _, labels_json, _ = run("gh label list --json name --limit 500")
-    repo_labels = json.loads(labels_json) if labels_json else []
-
-    # Find invalid and spam labels (case insensitive)
-    invalid_label = None
-    spam_label = None
-    for label in repo_labels:
-        name = label["name"]
-        if name.lower() == "invalid":
-            invalid_label = name
-        elif name.lower() == "spam":
-            spam_label = name
-
-    labels_to_add = [l for l in [invalid_label, spam_label] if l]
-
     kind = "PR" if is_pr else "issue"
     gh_cmd = "pr" if is_pr else "issue"
 
     if dry_run:
         print(f"Would run on {kind} {target}:")
 
+    # Get repo labels to check which exist
+    _, labels_json, _ = run("gh label list --json name --limit 500")
+    repo_labels = {label["name"].lower() for label in json.loads(labels_json or "[]")}
+    labels_to_add = {name for name in ["invalid", "spam"] if name in repo_labels}
+
+    # Get current labels and title on the issue/PR
+    _, target_json, _ = run(f"gh {gh_cmd} view {target} --json labels,title")
+    target_data = json.loads(target_json) if target_json else {}
+    current_labels = {label["name"].lower() for label in target_data.get("labels", [])}
+    current_title = target_data.get("title", "")
+
+    labels_to_remove = current_labels - {"spam", "invalid"}
+
+    if labels_to_remove:
+        labels_arg = shlex.quote(",".join(labels_to_remove))
+        run(
+            f"gh {gh_cmd} edit {target} --remove-label {labels_arg}",
+            dry_run,
+            f"Removed labels: {', '.join(labels_to_remove)}",
+        )
+
     if labels_to_add:
-        run(f"gh {gh_cmd} edit {target} --add-label {','.join(labels_to_add)}", dry_run)
+        labels_arg = shlex.quote(",".join(labels_to_add))
+        run(
+            f"gh {gh_cmd} edit {target} --add-label {labels_arg}",
+            dry_run,
+            f"Added labels: {', '.join(labels_to_add)}",
+        )
 
-    run(f"gh {gh_cmd} edit {target} --title spam", dry_run)
+    if current_title.lower() != "spam":
+        run(f"gh {gh_cmd} edit {target} --title spam", dry_run, "Changed title: spam")
 
-    reason = "" if is_pr else "--reason 'spam'"
-    run(f"gh {gh_cmd} close {target} {reason}", dry_run)
-
-    if not dry_run:
-        print("Closed as spam")
+    reason = "" if is_pr else "--reason 'not planned'"
+    run(f"gh {gh_cmd} close {target} {reason}", dry_run, "Closed")
 
 
 def cmd_unassign(args) -> None:
