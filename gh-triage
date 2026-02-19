@@ -87,7 +87,11 @@ def cmd_unassign(args) -> None:
         data = json.loads(pr_json)
     else:
         is_pr = False
-        _, issue_json, _ = run(f"gh issue view {target} --json assignees")
+        rc, issue_json, _ = run(f"gh issue view {target} --json assignees")
+        if rc != 0:
+            print(f"Could not find issue or PR {target}")
+            print("Tip: check you're running inside the relevant repo or use full URL")
+            return
         data = json.loads(issue_json) if issue_json else {}
 
     assignees = [a["login"] for a in data.get("assignees", [])]
